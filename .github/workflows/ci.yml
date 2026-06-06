@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  lint-and-test:
+    name: Lint and test
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: sqlite:///./ci.db
+      HF_TOKEN: test-hf-token
+      LANGCHAIN_API_KEY: test-langchain-key
+      LANGCHAIN_TRACING_V2: "false"
+      LANGCHAIN_ENDPOINTS: https://api.smith.langchain.com
+      LANGCHAIN_PROJECT: ci
+      JWT_SECRET_KEY: ci-secret-key
+      JWT_ALGO: HS256
+      ALLOWED_ORIGINS: ""
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run Ruff
+        run: python -m ruff check .
+
+      - name: Run tests
+        run: python -m pytest
