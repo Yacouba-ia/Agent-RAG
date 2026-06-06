@@ -15,10 +15,6 @@ jobs:
     env:
       DATABASE_URL: sqlite:///./ci.db
       HF_TOKEN: test-hf-token
-      LANGCHAIN_API_KEY: test-langchain-key
-      LANGCHAIN_TRACING_V2: "false"
-      LANGCHAIN_ENDPOINTS: https://api.smith.langchain.com
-      LANGCHAIN_PROJECT: ci
       JWT_SECRET_KEY: ci-secret-key
       JWT_ALGO: HS256
       ALLOWED_ORIGINS: ""
