@@ -1,10 +1,10 @@
 # Agent RAG avec FastAPI, PostgreSQL et Hugging Face
 
-Auteur: Yacouba Berthe
-
 ## Presentation
 
-Ce projet est une API backend permettant a un utilisateur d'uploader des documents PDF, de les indexer dans une base vectorielle locale, puis de poser des questions a un assistant RAG.
+Projet developpe par Yacouba Berthe, developpeur backend Python/FastAPI oriente API, IA appliquee, RAG, Docker et deploiement cloud.
+
+Ce projet est une API backend permettant a un utilisateur d'uploader des documents PDF, de stocker leurs chunks dans PostgreSQL, puis de poser des questions a un assistant RAG.
 
 L'objectif du projet est de montrer une architecture backend moderne autour de FastAPI, PostgreSQL, Alembic, Docker et Hugging Face, avec une base de deploiement compatible Railway.
 
@@ -26,6 +26,7 @@ Ce repository est pense comme un projet personnel de portfolio. Il n'est pas pre
 - Metadata ajoutees aux chunks: nom du fichier, page et utilisateur.
 - Sources fournies au contexte RAG avec nom du fichier et page.
 - Generation de reponse via l'API Hugging Face.
+- Observabilite et tracing RAG avec LangSmith.
 - Persistance des conversations en PostgreSQL.
 - Endpoints pour consulter les conversations et messages.
 - Endpoint de suppression d'une conversation.
@@ -47,6 +48,7 @@ Ce repository est pense comme un projet personnel de portfolio. Il n'est pas pre
 - Passlib
 - python-jose
 - Hugging Face
+- LangSmith
 - Docker
 - Docker Compose
 
@@ -70,6 +72,10 @@ FastAPI
   |
   |--> Hugging Face
          |-- modele de generation
+  |
+  |--> LangSmith
+         |-- tracing RAG
+         |-- observabilite
 ```
 
 ## Structure Du Projet
@@ -110,6 +116,10 @@ DATABASE_URL=postgresql+psycopg://user:password@host:5432/database
 
 HF_TOKEN=
 
+LANGCHAIN_API_KEY=
+LANGCHAIN_TRACING_V2=false
+LANGCHAIN_PROJECT=rag-fastapi-huggingface-api
+
 JWT_SECRET_KEY=
 JWT_ALGO=HS256
 
@@ -122,6 +132,9 @@ ALLOWED_ORIGINS=
 | --- | --- |
 | `DATABASE_URL` | URL de connexion PostgreSQL utilisee par SQLAlchemy et Alembic. |
 | `HF_TOKEN` | Token Hugging Face utilise pour acceder aux services Hugging Face si necessaire. |
+| `LANGCHAIN_API_KEY` | Cle LangSmith utilisee pour tracer les executions RAG. |
+| `LANGCHAIN_TRACING_V2` | Active ou desactive le tracing LangSmith. |
+| `LANGCHAIN_PROJECT` | Nom du projet LangSmith utilise pour organiser les traces. |
 | `JWT_SECRET_KEY` | Cle secrete utilisee pour signer les tokens JWT. |
 | `JWT_ALGO` | Algorithme de signature JWT, par defaut `HS256`. |
 | `ALLOWED_ORIGINS` | Liste d'origines autorisees pour CORS, separees par des virgules. Exemple: `http://localhost:3000,https://mon-front.com`. |
@@ -289,6 +302,9 @@ Healthcheck recommande:
 ```env
 DATABASE_URL=
 HF_TOKEN=
+LANGCHAIN_API_KEY=
+LANGCHAIN_TRACING_V2=false
+LANGCHAIN_PROJECT=rag-fastapi-huggingface-api
 JWT_SECRET_KEY=
 JWT_ALGO=HS256
 ALLOWED_ORIGINS=
@@ -498,6 +514,7 @@ Le RAG fonctionne actuellement avec:
 - metadata sur les chunks: `filename`, `page`, `user_id`;
 - contexte RAG formate avec les sources disponibles;
 - generation de reponse via l'API Hugging Face.
+- tracing LangSmith sur la recherche documentaire, l'appel Hugging Face et l'execution RAG globale.
 
 Le modele actuellement configure dans le code est:
 
@@ -517,6 +534,26 @@ Le projet contient deja:
 - verification basique des fichiers PDF;
 - limite de taille des fichiers;
 - `.gitignore` pour eviter de pousser `.env`, `.venv`, caches et bases locales.
+
+## Observabilite
+
+Le projet integre LangSmith pour tracer les parties importantes du pipeline RAG:
+
+- recuperation des chunks documentaires;
+- construction du contexte;
+- appel au modele Hugging Face;
+- execution globale de la reponse RAG.
+
+Le tracing est configurable via les variables d'environnement:
+
+```env
+LANGCHAIN_API_KEY=
+LANGCHAIN_TRACING_V2=false
+LANGCHAIN_PROJECT=rag-fastapi-huggingface-api
+```
+
+En local ou en CI, le tracing peut rester desactive avec `LANGCHAIN_TRACING_V2=false`.
+En environnement de demonstration, il suffit d'ajouter une cle LangSmith valide et d'activer le tracing.
 
 ## Limites Connues Actuelles
 
@@ -629,11 +666,20 @@ Etat:
 - Auth JWT presente.
 - Upload PDF present.
 - RAG present.
-- Documentation en cours.
-- Tests a ajouter.
-- CI a ajouter.
-- Durcissement production portfolio en cours.
+- Tracing LangSmith present.
+- Documentation complete pour portfolio.
+- Tests automatises presents.
+- CI GitHub Actions presente.
+- Durcissement production portfolio effectue.
 
 ## Licence
 
 Licence a definir avant publication finale sur GitHub.
+
+## Auteur
+
+Yacouba Berthe.
+
+Developpeur backend Python/FastAPI avec un focus sur les API REST, les systemes RAG, l'integration IA, Docker, PostgreSQL et le deploiement cloud.
+
+Ce projet fait partie de mon portfolio technique pour demontrer ma capacite a concevoir, structurer, tester, documenter et deployer une API backend orientee IA.

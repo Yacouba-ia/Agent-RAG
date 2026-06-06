@@ -2,8 +2,8 @@ import logging
 import re
 
 import requests
+from langsmith import traceable
 from sqlalchemy.orm import Session
-
 from config import settings
 from tablebase import DocumentChunks
 
@@ -72,6 +72,7 @@ def _tokenize_query(query: str) -> set[str]:
     }
 
 
+@traceable(name="retrieve_documents")
 def retrieve_documents(db: Session, query: str, user_id: int, limit: int = 5) -> list[dict]:
     query_tokens = _tokenize_query(query)
     chunks = (
@@ -127,6 +128,7 @@ Reponse:
 """.strip()
 
 
+@traceable(name="call_huggingface")
 def call_huggingface(prompt: str) -> str:
     headers = {"Authorization": f"Bearer {settings.HF_TOKEN}"}
     payload = {
@@ -156,6 +158,7 @@ def call_huggingface(prompt: str) -> str:
     return "Je ne sais pas."
 
 
+@traceable(name="run_rag")
 def run_rag(db: Session, query: str, user_id: int) -> str:
     docs = retrieve_documents(db=db, query=query, user_id=user_id)
     if not docs:
