@@ -23,6 +23,7 @@ async def update_password(
         db: db_dependency,
         form_data: PasswordValidation = Body()
 ):
+    """Met a jour le mot de passe de l'utilisateur authentifie."""
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -69,6 +70,7 @@ async def get_conversation(
         skip: int = Query(default=0, ge=0),
         limit: int = Query(default=10, ge=1, le=100)
 ):
+    """Renvoie les conversations paginees appartenant a l'utilisateur courant."""
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -94,6 +96,7 @@ async def get_messages(
         skip: int = Query(default=0, ge=0),
         limit: int = Query(default=10, ge=1, le=100)
 ):
+    """Renvoie les messages pagines d'une conversation apres verification du proprietaire."""
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -130,6 +133,7 @@ async def delete_messages(
         user: user_dependency,
         session_id: int = Path(...)
 ):
+    """Supprime une conversation et ses messages pour l'utilisateur courant."""
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

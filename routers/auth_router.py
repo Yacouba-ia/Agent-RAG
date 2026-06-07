@@ -25,30 +25,35 @@ router = APIRouter(
 
 oauth2_bearer = OAuth2PasswordBearer(tokenUrl="auth/login")
 
+# Contexte central de hachage des mots de passe. Les mots de passe ne sont jamais stockes en clair.
 bcrypt_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+INVALID_CREDENTIALS_DETAIL = "Identifiants invalides"
 
 
 def get_user_by_username(username: str, db: Session):
+    """Retourne un utilisateur par nom d'utilisateur, ou None s'il n'existe pas."""
     return db.query(Users).filter(Users.username == username).first()
 
 
 def authenticate_user(username: str, password: str, db: Session):
+    """Valide le nom d'utilisateur et le mot de passe avant de generer un JWT."""
     user_authenticated = get_user_by_username(username, db)
     if not user_authenticated:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Identifiants invalides"
+            detail=INVALID_CREDENTIALS_DETAIL
         )
     if not bcrypt_context.verify(password, user_authenticated.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Identifiants invalides",
+            detail=INVALID_CREDENTIALS_DETAIL,
         )
 
     return user_authenticated
 
 
 def create_token(username: str, user_id: int, expires_date: timedelta):
+    """Cree un JWT de courte duree utilise par les routes protegees."""
     encoded_data = {"username": username, "id": user_id}
     expiration = datetime.now(UTC) + expires_date
     encoded_data.update({"exp": expiration})
@@ -56,6 +61,7 @@ def create_token(username: str, user_id: int, expires_date: timedelta):
 
 
 def get_current_user(token: Annotated[str, Depends(oauth2_bearer)]):
+    """Decode le JWT et expose l'utilisateur authentifie aux handlers."""
 
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algo])
@@ -70,7 +76,7 @@ def get_current_user(token: Annotated[str, Depends(oauth2_bearer)]):
             )
 
     except JWTError as exc:
-        logger.warning("Invalid JWT token")
+        logger.warning("Token JWT invalide")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Erreur d'authentification",
@@ -79,7 +85,10 @@ def get_current_user(token: Annotated[str, Depends(oauth2_bearer)]):
 
     return {"id": user_id, "username": username}
 
+
+# Type de dependance partagee utilisee par les routeurs proteges.
 user_dependency = Annotated[dict, Depends(get_current_user)]
+
 
 @router.post(
     "/register",
@@ -87,6 +96,7 @@ user_dependency = Annotated[dict, Depends(get_current_user)]
     dependencies=[Depends(auth_rate_limit)],
 )
 async def register(db:db_dependency,  user_body: UserValidation = Body()):
+    """Cree un compte utilisateur avec un mot de passe hache."""
     existing_email = db.query(Users).filter(Users.email == user_body.email).first()
     if existing_email:
         raise HTTPException(
@@ -129,8 +139,7 @@ async def register(db:db_dependency,  user_body: UserValidation = Body()):
     dependencies=[Depends(auth_rate_limit)],
 )
 async def login(db:db_dependency, form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
+    """Authentifie un utilisateur et renvoie un token Bearer."""
     authenticated_user = authenticate_user(form_data.username, form_data.password, db)
-    if not authenticated_user:
-        raise HTTPException(status_code=400, detail="Incorrect username or password")
     token = create_token(authenticated_user.username, authenticated_user.id, timedelta(minutes=30))
     return {"access_token": token, "token_type": "bearer"}

@@ -30,6 +30,7 @@ async def chat_ask(
         user: user_dependency,
         data: ChatRequest
 ):
+    """Enregistre la question, lance le RAG, sauvegarde la reponse et la renvoie en streaming."""
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -48,6 +49,7 @@ async def chat_ask(
     )
 
     if not session:
+        # La premiere question d'un fil cree la ligne de conversation.
         session = ChatSessions(
             thread_id=thread_id,
             user_id=user_id,
@@ -71,6 +73,7 @@ async def chat_ask(
         content=query
     )
     try:
+        # On enregistre le message utilisateur avant la generation pour garder l'historique complet.
         db.add(user_chat)
         db.commit()
     except SQLAlchemyError as exc:
@@ -96,6 +99,7 @@ async def chat_ask(
         content=answer.strip(),
     )
     try:
+        # La reponse de l'assistant est enregistree apres une generation reussie.
         db.add(rag_chat)
         db.commit()
     except SQLAlchemyError as exc:

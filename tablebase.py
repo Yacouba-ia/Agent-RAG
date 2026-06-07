@@ -5,6 +5,8 @@ from database import Base
 
 
 class Users(Base):
+    """Utilisateurs inscrits dans l'application."""
+
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, nullable=False, unique=True, index=True)
@@ -14,7 +16,10 @@ class Users(Base):
 
 
 class ChatSessions(Base):
+    """Conversation appartenant a un utilisateur."""
+
     __tablename__ = "chat_sessions"
+    # Un utilisateur ne doit pas avoir deux conversations avec le meme thread_id.
     __table_args__ = (
         UniqueConstraint("user_id", "thread_id", name="uq_chat_sessions_user_thread"),
     )
@@ -29,7 +34,7 @@ class ChatSessions(Base):
     )
     title = Column(String, nullable=False, default="Nouvelle conversation")
     project_type = Column(String, nullable=False, default="Agent RAG")
-    model_used = Column(String, nullable=False, default="Huggging Face")
+    model_used = Column(String, nullable=False, default="Hugging Face")
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     update_at = Column(
         DateTime,
@@ -40,6 +45,8 @@ class ChatSessions(Base):
 
 
 class ChatMessages(Base):
+    """Messages echanges dans une conversation."""
+
     __tablename__ = "chat_messages"
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(
@@ -54,6 +61,8 @@ class ChatMessages(Base):
 
 
 class DocumentChunks(Base):
+    """Morceaux de texte extraits des PDF pour la recherche documentaire."""
+
     __tablename__ = "document_chunks"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -67,3 +76,19 @@ class DocumentChunks(Base):
     page = Column(Integer, nullable=False)
     content = Column(String, nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class RateLimitEvent(Base):
+    """Evenements de rate limiting conserves en base pour une protection persistante."""
+
+    __tablename__ = "rate_limit_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    scope = Column(String, nullable=False, index=True)
+    client_key = Column(String, nullable=False, index=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        index=True,
+    )
