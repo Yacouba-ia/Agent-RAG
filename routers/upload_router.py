@@ -32,7 +32,7 @@ ALLOWED_PDF_CONTENT_TYPE = "application/pdf"
 async def upload_document(
     user: user_dependency,
     db: db_dependency,
-    pdfs: UploadFile = File(...),
+    pdfs: list[UploadFile] = File(...),
 ):
     """Extrait le texte des PDF, le decoupe en morceaux et stocke les chunks dans PostgreSQL."""
     if not user:
