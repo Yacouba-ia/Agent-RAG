@@ -1,6 +1,10 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEFAULT_CORS_ORIGINS = (
+    "https://ai-knowledge-assistant-frontend-ashen.vercel.app",
+)
+
 
 class Settings(BaseSettings):
     """Configuration chargee depuis les variables d'environnement ou .env."""
@@ -21,14 +25,15 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         """Convertit ALLOWED_ORIGINS en liste d'origines CORS propres."""
-        if not self.allowed_origins:
-            return []
-
-        return [
+        configured_origins = [
             origin.strip()
             for origin in self.allowed_origins.split(",")
             if origin.strip()
         ]
+
+        # L'origine Vercel publique est autorisee par defaut pour eviter un
+        # deploiement Railway sans header CORS quand ALLOWED_ORIGINS est absent.
+        return list(dict.fromkeys([*configured_origins, *DEFAULT_CORS_ORIGINS]))
 
     model_config = SettingsConfigDict(
         env_file=".env",

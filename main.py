@@ -14,16 +14,15 @@ from routers import auth_router, chat_router, upload_router, user_router
 app = FastAPI()
 logger = logging.getLogger(__name__)
 
-# CORS est active seulement si ALLOWED_ORIGINS est configure.
-# Cela garde l'API fermee par defaut en usage local ou backend seul.
-if settings.cors_origins:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# CORS doit etre configure avant les routers pour couvrir les preflight
+# et les erreurs de validation renvoyees aux frontends autorises.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 if settings.trust_proxy_headers:
     # Quand le projet est derriere un proxy, on recupere la vraie IP cliente.
