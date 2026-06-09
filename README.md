@@ -45,7 +45,7 @@ Ce qui compte ici, c'est la preuve visible que l'API fonctionne pour de vrai, qu
 - Recherche documentaire simple par utilisateur.
 - Metadata ajoutees aux chunks: nom du fichier, page et utilisateur.
 - Sources fournies au contexte RAG avec nom du fichier et page.
-- Generation de reponse via l'API OpenAI.
+- Generation de reponse streamee via l'API OpenAI.
 - Gestion propre des erreurs temporaires du service IA.
 - Observabilite et tracing RAG avec LangSmith.
 - Persistance des conversations en PostgreSQL.
@@ -146,7 +146,8 @@ Les variables attendues sont definies dans `.env.example`.
 DATABASE_URL=postgresql+psycopg://user:password@host:5432/database
 
 OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4.1-mini
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_MAX_OUTPUT_TOKENS=1600
 
 LANGCHAIN_API_KEY=
 LANGCHAIN_TRACING_V2=false
@@ -164,7 +165,8 @@ ALLOWED_ORIGINS=
 | --- | --- |
 | `DATABASE_URL` | URL de connexion PostgreSQL utilisee par SQLAlchemy et Alembic. |
 | `OPENAI_API_KEY` | Cle API OpenAI utilisee pour generer les reponses RAG. |
-| `OPENAI_MODEL` | Modele OpenAI utilise pour la generation, par defaut `gpt-4.1-mini`. |
+| `OPENAI_MODEL` | Modele OpenAI utilise pour la generation, par defaut `gpt-4o-mini`. |
+| `OPENAI_MAX_OUTPUT_TOKENS` | Limite maximale de tokens de sortie OpenAI, par defaut `1600`. |
 | `LANGCHAIN_API_KEY` | Cle LangSmith utilisee pour tracer les executions RAG. |
 | `LANGCHAIN_TRACING_V2` | Active ou desactive le tracing LangSmith. |
 | `LANGCHAIN_PROJECT` | Nom du projet LangSmith utilise pour organiser les traces. |
@@ -311,7 +313,7 @@ Sur Railway, il faut configurer:
 
 - un service PostgreSQL;
 - la variable `DATABASE_URL`;
-- les variables OpenAI `OPENAI_API_KEY` et `OPENAI_MODEL`;
+- les variables OpenAI `OPENAI_API_KEY`, `OPENAI_MODEL` et `OPENAI_MAX_OUTPUT_TOKENS`;
 - les variables JWT;
 - `ALLOWED_ORIGINS` si un frontend est connecte.
 - `TRUST_PROXY_HEADERS=true`.
@@ -483,7 +485,7 @@ Tests actuellement presents:
 - refus d'une route protegee sans authentification;
 - refus d'un upload non PDF;
 - appel de `/chat_ask/` avec agent RAG mocke;
-- appel OpenAI mocke et gestion propre des erreurs de generation.
+- streaming OpenAI mocke, sauvegarde de la reponse finale et gestion propre des erreurs.
 
 ## RAG
 
@@ -495,14 +497,17 @@ Le RAG fonctionne actuellement avec:
 - recherche simple par mots dans les chunks de l'utilisateur;
 - metadata sur les chunks: `filename`, `page`, `user_id`;
 - contexte RAG formate avec les sources disponibles;
-- generation de reponse via l'API OpenAI;
+- generation de reponse en streaming via l'API OpenAI;
+- limite de sortie configurable avec `OPENAI_MAX_OUTPUT_TOKENS`;
+- sauvegarde de la reponse assistant complete en PostgreSQL apres la fin du streaming;
 - gestion propre des erreurs temporaires de l'API OpenAI;
 - tracing LangSmith sur la recherche documentaire, l'appel OpenAI et l'execution RAG globale.
 
 Le modele de generation se configure avec la variable d'environnement:
 
 ```text
-OPENAI_MODEL=gpt-4.1-mini
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_MAX_OUTPUT_TOKENS=1600
 ```
 
 ## Securite Actuelle
@@ -547,7 +552,7 @@ Ces limites sont connues et sont traitees progressivement:
 
 - La recherche documentaire reste volontairement legere et lexicale.
 - L'appel OpenAI depend toujours de la disponibilite du service externe.
-- Le streaming du chat reste synchrone dans la requete.
+- Le streaming utilise une reponse texte simple compatible avec le frontend actuel.
 - Les migrations Railway ne sont pas automatisees.
 - Il n'y a pas encore de frontend dans ce repository.
 

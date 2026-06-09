@@ -1,9 +1,12 @@
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
+from rag import NO_RELEVANT_DOCUMENT_MESSAGE
 from routers import chat_router
+from tablebase import ChatMessages
 
 
-def test_chat_ask_streams_mocked_rag_response(client: TestClient, monkeypatch):
+def _login_test_user(client: TestClient) -> str:
     client.post(
         "/auth/register",
         json={
@@ -19,9 +22,26 @@ def test_chat_ask_streams_mocked_rag_response(client: TestClient, monkeypatch):
             "password": "password123",
         },
     )
-    token = login_response.json()["access_token"]
+    return login_response.json()["access_token"]
 
-    monkeypatch.setattr(chat_router, "run_rag", lambda db, query, user_id: "Reponse RAG de test")
+
+def test_chat_ask_streams_and_saves_full_assistant_response(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch,
+):
+    token = _login_test_user(client)
+
+    monkeypatch.setattr(
+        chat_router,
+        "build_rag_prompt",
+        lambda db, query, user_id: "Prompt RAG de test",
+    )
+    monkeypatch.setattr(
+        chat_router,
+        "stream_openai_answer",
+        lambda prompt: iter(["Reponse ", "RAG ", "streamee"]),
+    )
 
     response = client.post(
         "/chat_ask/",
@@ -32,5 +52,46 @@ def test_chat_ask_streams_mocked_rag_response(client: TestClient, monkeypatch):
         },
     )
 
+    assistant_message = (
+        db_session.query(ChatMessages)
+        .filter(ChatMessages.role == "assistant")
+        .one()
+    )
+
     assert response.status_code == 200
-    assert response.text == "Reponse RAG de test"
+    assert response.headers["content-type"].startswith("text/plain")
+    assert response.text == "Reponse RAG streamee"
+    assert assistant_message.content == "Reponse RAG streamee"
+
+
+def test_chat_ask_streams_and_saves_no_relevant_document_message(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch,
+):
+    token = _login_test_user(client)
+
+    monkeypatch.setattr(
+        chat_router,
+        "build_rag_prompt",
+        lambda db, query, user_id: None,
+    )
+
+    response = client.post(
+        "/chat_ask/",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "thread_id": 1,
+            "query": "Quelle est la reponse ?",
+        },
+    )
+
+    assistant_message = (
+        db_session.query(ChatMessages)
+        .filter(ChatMessages.role == "assistant")
+        .one()
+    )
+
+    assert response.status_code == 200
+    assert response.text == NO_RELEVANT_DOCUMENT_MESSAGE
+    assert assistant_message.content == NO_RELEVANT_DOCUMENT_MESSAGE

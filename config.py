@@ -11,7 +11,11 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str
     openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
-    openai_model: str = Field(default="gpt-4.1-mini", validation_alias="OPENAI_MODEL")
+    openai_model: str = Field(default="gpt-4o-mini", validation_alias="OPENAI_MODEL")
+    openai_max_output_tokens: int = Field(
+        default=1600,
+        validation_alias="OPENAI_MAX_OUTPUT_TOKENS",
+    )
 
     # LangSmith utilise les variables LANGCHAIN_* pour configurer le tracing.
     LANGCHAIN_API_KEY: str = ""

@@ -1,5 +1,6 @@
 import logging
 import re
+from collections.abc import Iterator
 
 from langsmith import traceable
 from openai import OpenAI, OpenAIError
@@ -136,10 +137,17 @@ Tu es un assistant RAG intelligent.
 Tu reponds uniquement a partir des informations retrouvees dans la base documentaire.
 Si l'information n'existe pas dans les documents, dis simplement que tu ne sais pas.
 Reponds dans la langue utilisee par l'utilisateur.
-Quand une reponse utilise des documents, cite les sources disponibles avec le nom du fichier
-et la page.
-Pas de markdown.
-Pas de tableaux.
+
+Style de reponse attendu:
+- Structure la reponse comme ChatGPT: claire, professionnelle et facile a lire.
+- Utilise des titres courts quand cela aide la comprehension.
+- Utilise des listes numerotees pour les etapes, comparaisons ou suites d'idees.
+- Utilise des puces pour les caracteristiques, details ou points importants.
+- Ajoute des sauts de ligne entre les sections.
+- Evite les gros paragraphes compacts.
+- Ne fais pas de tableau sauf si c'est vraiment indispensable.
+- Quand une reponse utilise des documents, cite les sources disponibles avec le nom du fichier
+  et la page.
 
 Documents:
 {context}
@@ -160,6 +168,16 @@ def _extract_openai_text(response) -> str | None:
     return None
 
 
+def build_rag_prompt(db: Session, query: str, user_id: int) -> str | None:
+    """Prepare le prompt RAG sans lancer la generation."""
+    docs = retrieve_documents(db=db, query=query, user_id=user_id)
+    if not docs:
+        return None
+
+    context = format_retrieved_documents(docs)[:MAX_CONTEXT_CHARS]
+    return build_prompt(query=query, context=context)
+
+
 @traceable(name="call_openai")
 def call_openai(prompt: str) -> str:
     """Appelle OpenAI pour generer la reponse finale du pipeline RAG."""
@@ -177,7 +195,9 @@ def call_openai(prompt: str) -> str:
             model=settings.openai_model,
             instructions=OPENAI_SYSTEM_INSTRUCTIONS,
             input=prompt,
-            max_output_tokens=700,
+            max_output_tokens=settings.openai_max_output_tokens,
+            temperature=0.2,
+            store=False,
         )
     except OpenAIError:
         logger.exception("OpenAI generation failed")
@@ -194,13 +214,65 @@ def call_openai(prompt: str) -> str:
     return "Je ne sais pas."
 
 
+@traceable(name="stream_openai_answer")
+def stream_openai_answer(prompt: str) -> Iterator[str]:
+    """Streame la reponse OpenAI token par token pour FastAPI."""
+    if not settings.openai_api_key:
+        logger.error("OPENAI_API_KEY is not configured")
+        yield OPENAI_UNAVAILABLE_MESSAGE
+        return
+
+    client = OpenAI(
+        api_key=settings.openai_api_key,
+        timeout=OPENAI_TIMEOUT_SECONDS,
+    )
+
+    stream = None
+    try:
+        stream = client.responses.create(
+            model=settings.openai_model,
+            instructions=OPENAI_SYSTEM_INSTRUCTIONS,
+            input=prompt,
+            max_output_tokens=settings.openai_max_output_tokens,
+            temperature=0.2,
+            store=False,
+            stream=True,
+        )
+
+        for event in stream:
+            event_type = getattr(event, "type", "")
+
+            if event_type == "response.output_text.delta":
+                delta = getattr(event, "delta", "")
+                if delta:
+                    yield delta
+                continue
+
+            if event_type == "error":
+                logger.error(
+                    "OpenAI streaming error: code=%s message=%s",
+                    getattr(event, "code", None),
+                    getattr(event, "message", None),
+                )
+                yield OPENAI_UNAVAILABLE_MESSAGE
+                return
+    except OpenAIError:
+        logger.exception("OpenAI streaming failed")
+        yield OPENAI_UNAVAILABLE_MESSAGE
+    except Exception:
+        logger.exception("Unexpected OpenAI streaming failure")
+        yield OPENAI_UNAVAILABLE_MESSAGE
+    finally:
+        close_stream = getattr(stream, "close", None)
+        if callable(close_stream):
+            close_stream()
+
+
 @traceable(name="run_rag")
 def run_rag(db: Session, query: str, user_id: int) -> str:
     """Pipeline RAG complet: recherche, prompt, generation de reponse."""
-    docs = retrieve_documents(db=db, query=query, user_id=user_id)
-    if not docs:
+    prompt = build_rag_prompt(db=db, query=query, user_id=user_id)
+    if prompt is None:
         return NO_RELEVANT_DOCUMENT_MESSAGE
 
-    context = format_retrieved_documents(docs)[:MAX_CONTEXT_CHARS]
-    prompt = build_prompt(query=query, context=context)
     return call_openai(prompt)

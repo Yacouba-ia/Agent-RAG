@@ -7,7 +7,12 @@ from starlette import status
 
 from classes import ChatRequest
 from database import db_dependency
-from rag import run_rag
+from rag import (
+    NO_RELEVANT_DOCUMENT_MESSAGE,
+    OPENAI_UNAVAILABLE_MESSAGE,
+    build_rag_prompt,
+    stream_openai_answer,
+)
 from rate_limit import chat_rate_limit
 from routers.auth_router import user_dependency
 from tablebase import ChatMessages, ChatSessions
@@ -18,6 +23,24 @@ router = APIRouter(
 )
 
 logger = logging.getLogger(__name__)
+
+
+def save_assistant_message(db, session_id: int, answer: str) -> None:
+    """Sauvegarde la reponse complete apres la fin du streaming."""
+    if not answer.strip():
+        return
+
+    rag_chat = ChatMessages(
+        session_id=session_id,
+        role="assistant",
+        content=answer.strip(),
+    )
+    try:
+        db.add(rag_chat)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        logger.exception("Failed to save streamed assistant chat message")
 
 
 @router.post(
@@ -85,32 +108,37 @@ async def chat_ask(
         ) from exc
 
     try:
-        answer = run_rag(db=db, query=query, user_id=user_id)
+        prompt = build_rag_prompt(db=db, query=query, user_id=user_id)
     except Exception as exc:
-        logger.exception("RAG generation failed")
+        logger.exception("RAG prompt preparation failed")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Service RAG indisponible",
         ) from exc
 
-    rag_chat = ChatMessages(
-        session_id=session.id,
-        role="assistant",
-        content=answer.strip(),
-    )
-    try:
-        # La reponse de l'assistant est enregistree apres une generation reussie.
-        db.add(rag_chat)
-        db.commit()
-    except SQLAlchemyError as exc:
-        db.rollback()
-        logger.exception("Failed to save assistant chat message")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Erreur lors de l'enregistrement de la reponse",
-        ) from exc
+    session_id = session.id
 
     def generate():
-        yield answer
+        chunks = []
 
-    return StreamingResponse(generate(), media_type="text/plain")
+        try:
+            if prompt is None:
+                chunks.append(NO_RELEVANT_DOCUMENT_MESSAGE)
+                yield NO_RELEVANT_DOCUMENT_MESSAGE
+                return
+
+            for chunk in stream_openai_answer(prompt):
+                chunks.append(chunk)
+                yield chunk
+        except Exception:
+            logger.exception("Unexpected RAG streaming failure")
+            chunks.append(OPENAI_UNAVAILABLE_MESSAGE)
+            yield OPENAI_UNAVAILABLE_MESSAGE
+        finally:
+            save_assistant_message(
+                db=db,
+                session_id=session_id,
+                answer="".join(chunks),
+            )
+
+    return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
