@@ -1,9 +1,8 @@
 import logging
 import re
-from time import sleep
 
-import requests
 from langsmith import traceable
+from openai import OpenAI, OpenAIError
 from sqlalchemy.orm import Session
 
 from config import settings
@@ -11,17 +10,21 @@ from tablebase import DocumentChunks
 
 logger = logging.getLogger(__name__)
 
-# L'inference Hugging Face distante garde l'image Docker legere:
-# pas de torch, transformers, sentence-transformers ou base vectorielle locale.
-HF_MODEL_ID = "Qwen/Qwen3-32B"
-HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL_ID}"
 MAX_CONTEXT_CHARS = 12000
-HF_MAX_ATTEMPTS = 3
-HF_RETRY_DELAY_SECONDS = 2
-HF_TIMEOUT_SECONDS = 120
-HF_UNAVAILABLE_MESSAGE = (
-    "Je ne peux pas generer de reponse pour le moment. "
-    "Le modele Hugging Face est temporairement indisponible."
+OPENAI_TIMEOUT_SECONDS = 60
+OPENAI_UNAVAILABLE_MESSAGE = (
+    "Je ne peux pas générer de réponse pour le moment. "
+    "Le service IA est temporairement indisponible."
+)
+NO_RELEVANT_DOCUMENT_MESSAGE = (
+    "Je ne sais pas. Aucun document pertinent n'a été trouvé "
+    "dans votre base documentaire."
+)
+OPENAI_SYSTEM_INSTRUCTIONS = (
+    "Tu es un assistant RAG. Réponds uniquement à partir du contexte documentaire "
+    "fourni dans le prompt utilisateur. Si le contexte ne contient pas l'information, "
+    "dis que tu ne sais pas. Ne révèle jamais d'erreur technique, de clé API ou "
+    "d'information sensible."
 )
 
 
@@ -126,7 +129,7 @@ def retrieve_documents(db: Session, query: str, user_id: int, limit: int = 5) ->
 
 
 def build_prompt(query: str, context: str) -> str:
-    """Cree l'instruction finale envoyee a Hugging Face."""
+    """Cree l'instruction finale envoyee au modele de generation."""
     return f"""
 Tu es un assistant RAG intelligent.
 
@@ -148,102 +151,47 @@ Reponse:
 """.strip()
 
 
-def _extract_generated_text(data) -> str | None:
-    """Extrait le texte genere a partir des formats de reponse Hugging Face connus."""
-    if isinstance(data, list) and data:
-        generated_text = data[0].get("generated_text")
-        if generated_text:
-            return generated_text.strip()
-
-    if isinstance(data, dict):
-        generated_text = data.get("generated_text")
-        if generated_text:
-            return generated_text.strip()
+def _extract_openai_text(response) -> str | None:
+    """Extrait le texte genere depuis la reponse OpenAI Responses API."""
+    output_text = getattr(response, "output_text", None)
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
 
     return None
 
 
-def _is_transient_hf_error(data) -> bool:
-    """Repere les erreurs temporaires qui meritent un nouvel essai."""
-    if not isinstance(data, dict):
-        return False
+@traceable(name="call_openai")
+def call_openai(prompt: str) -> str:
+    """Appelle OpenAI pour generer la reponse finale du pipeline RAG."""
+    if not settings.openai_api_key:
+        logger.error("OPENAI_API_KEY is not configured")
+        return OPENAI_UNAVAILABLE_MESSAGE
 
-    error_message = str(data.get("error", "")).lower()
-    if not error_message:
-        return False
-
-    transient_markers = (
-        "loading",
-        "currently loading",
-        "model is loading",
-        "timeout",
-        "temporarily unavailable",
-        "busy",
+    client = OpenAI(
+        api_key=settings.openai_api_key,
+        timeout=OPENAI_TIMEOUT_SECONDS,
     )
-    return any(marker in error_message for marker in transient_markers)
 
+    try:
+        response = client.responses.create(
+            model=settings.openai_model,
+            instructions=OPENAI_SYSTEM_INSTRUCTIONS,
+            input=prompt,
+            max_output_tokens=700,
+        )
+    except OpenAIError:
+        logger.exception("OpenAI generation failed")
+        return OPENAI_UNAVAILABLE_MESSAGE
+    except Exception:
+        logger.exception("Unexpected OpenAI generation failure")
+        return OPENAI_UNAVAILABLE_MESSAGE
 
-@traceable(name="call_huggingface")
-def call_huggingface(prompt: str) -> str:
-    """Appelle l'API Hugging Face avec retries simples et normalisation de la reponse."""
-    headers = {"Authorization": f"Bearer {settings.HF_TOKEN}"}
-    payload = {
-        "inputs": prompt,
-        "options": {
-            "wait_for_model": True,
-        },
-        "parameters": {
-            "max_new_tokens": 512,
-            "temperature": 0.2,
-            "return_full_text": False,
-        },
-    }
+    generated_text = _extract_openai_text(response)
+    if generated_text:
+        return generated_text
 
-    for attempt in range(1, HF_MAX_ATTEMPTS + 1):
-        try:
-            response = requests.post(
-                HF_API_URL,
-                headers=headers,
-                json=payload,
-                timeout=HF_TIMEOUT_SECONDS,
-            )
-            data = response.json()
-
-            if response.status_code >= 500:
-                raise requests.HTTPError(
-                    f"Erreur temporaire Hugging Face: {response.status_code}",
-                    response=response,
-                )
-
-            if response.status_code == 429 or _is_transient_hf_error(data):
-                raise requests.HTTPError(
-                    f"Hugging Face indisponible temporairement: {response.status_code}",
-                    response=response,
-                )
-
-            response.raise_for_status()
-
-            generated_text = _extract_generated_text(data)
-            if generated_text:
-                return generated_text
-
-            logger.warning("Unexpected Hugging Face response format: %s", data)
-            return "Je ne sais pas."
-        except (requests.RequestException, ValueError) as exc:
-            if attempt < HF_MAX_ATTEMPTS:
-                logger.warning(
-                    "Hugging Face attempt %s/%s failed, retrying: %s",
-                    attempt,
-                    HF_MAX_ATTEMPTS,
-                    exc,
-                )
-                sleep(HF_RETRY_DELAY_SECONDS)
-                continue
-
-            logger.exception("Hugging Face request failed after retries")
-            return HF_UNAVAILABLE_MESSAGE
-
-    return HF_UNAVAILABLE_MESSAGE
+    logger.warning("Unexpected OpenAI response format: %s", response)
+    return "Je ne sais pas."
 
 
 @traceable(name="run_rag")
@@ -251,11 +199,8 @@ def run_rag(db: Session, query: str, user_id: int) -> str:
     """Pipeline RAG complet: recherche, prompt, generation de reponse."""
     docs = retrieve_documents(db=db, query=query, user_id=user_id)
     if not docs:
-        return (
-            "Je ne sais pas. Aucun document pertinent n'a ete trouve "
-            "dans votre base documentaire."
-        )
+        return NO_RELEVANT_DOCUMENT_MESSAGE
 
     context = format_retrieved_documents(docs)[:MAX_CONTEXT_CHARS]
     prompt = build_prompt(query=query, context=context)
-    return call_huggingface(prompt)
+    return call_openai(prompt)

@@ -1,11 +1,11 @@
-import requests
-
 import rag
 from rag import (
-    call_huggingface,
+    OPENAI_UNAVAILABLE_MESSAGE,
+    call_openai,
     format_document_source,
     format_retrieved_documents,
     get_user_collection_name,
+    run_rag,
     split_text,
 )
 
@@ -42,53 +42,65 @@ def test_split_text_keeps_overlap():
     assert chunks[1] == "a" * 400
 
 
-def test_call_huggingface_retries_then_returns_text(monkeypatch):
-    calls = {"count": 0}
+def test_call_openai_returns_generated_text(monkeypatch):
+    calls = {}
 
-    class FakeResponse:
-        def __init__(self, status_code, data):
-            self.status_code = status_code
-            self._data = data
+    class FakeOpenAIResponse:
+        output_text = " Reponse de test "
 
-        def json(self):
-            return self._data
+    class FakeResponses:
+        def create(self, **kwargs):
+            calls["create_kwargs"] = kwargs
+            return FakeOpenAIResponse()
 
-        def raise_for_status(self):
-            if self.status_code >= 400:
-                raise requests.HTTPError(response=self)
+    class FakeOpenAIClient:
+        def __init__(self, **kwargs):
+            calls["client_kwargs"] = kwargs
+            self.responses = FakeResponses()
 
-    def fake_post(*args, **kwargs):
-        calls["count"] += 1
-        if calls["count"] == 1:
-            return FakeResponse(503, {"error": "Model is loading"})
-        return FakeResponse(200, [{"generated_text": "Reponse de test"}])
+    monkeypatch.setattr(rag.settings, "openai_api_key", "test-openai-key")
+    monkeypatch.setattr(rag.settings, "openai_model", "gpt-4.1-mini")
+    monkeypatch.setattr(rag, "OpenAI", FakeOpenAIClient)
 
-    monkeypatch.setattr(rag.requests, "post", fake_post)
-    monkeypatch.setattr(rag, "sleep", lambda *_: None)
-
-    result = call_huggingface("Question de test")
+    result = call_openai("Question de test")
 
     assert result == "Reponse de test"
-    assert calls["count"] == 2
+    assert calls["client_kwargs"]["api_key"] == "test-openai-key"
+    assert calls["create_kwargs"]["model"] == "gpt-4.1-mini"
+    assert calls["create_kwargs"]["input"] == "Question de test"
 
 
-def test_call_huggingface_returns_clear_unavailable_message(monkeypatch):
-    class FakeResponse:
-        def __init__(self):
-            self.status_code = 503
+def test_call_openai_returns_clear_unavailable_message_without_key(monkeypatch):
+    monkeypatch.setattr(rag.settings, "openai_api_key", "")
 
-        def json(self):
-            return {"error": "Model is loading"}
+    result = call_openai("Question de test")
 
-        def raise_for_status(self):
-            raise requests.HTTPError(response=self)
+    assert result == OPENAI_UNAVAILABLE_MESSAGE
 
-    monkeypatch.setattr(rag.requests, "post", lambda *args, **kwargs: FakeResponse())
-    monkeypatch.setattr(rag, "sleep", lambda *_: None)
 
-    result = call_huggingface("Question de test")
+def test_call_openai_returns_clear_unavailable_message_on_error(monkeypatch):
+    class FakeResponses:
+        def create(self, **kwargs):
+            raise RuntimeError("OpenAI temporary error")
+
+    class FakeOpenAIClient:
+        def __init__(self, **kwargs):
+            self.responses = FakeResponses()
+
+    monkeypatch.setattr(rag.settings, "openai_api_key", "test-openai-key")
+    monkeypatch.setattr(rag, "OpenAI", FakeOpenAIClient)
+
+    result = call_openai("Question de test")
+
+    assert result == OPENAI_UNAVAILABLE_MESSAGE
+
+
+def test_run_rag_keeps_no_relevant_document_message(monkeypatch):
+    monkeypatch.setattr(rag, "retrieve_documents", lambda **kwargs: [])
+
+    result = run_rag(db=None, query="Question", user_id=1)
 
     assert result == (
-        "Je ne peux pas generer de reponse pour le moment. "
-        "Le modele Hugging Face est temporairement indisponible."
+        "Je ne sais pas. Aucun document pertinent n'a été trouvé "
+        "dans votre base documentaire."
     )

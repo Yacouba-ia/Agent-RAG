@@ -1,4 +1,4 @@
-# Agent RAG avec FastAPI, PostgreSQL et Hugging Face
+# Agent RAG avec FastAPI, PostgreSQL et OpenAI
 
 API backend de portfolio pour uploader des PDF, stocker les chunks dans PostgreSQL, interroger un assistant RAG et tracer les executions avec LangSmith.
 
@@ -10,7 +10,7 @@ Projet developpe par Yacouba Berthe, developpeur backend Python/FastAPI oriente 
 
 Ce projet est une API backend permettant a un utilisateur d'uploader des documents PDF, de stocker leurs chunks dans PostgreSQL, puis de poser des questions a un assistant RAG.
 
-L'objectif du projet est de montrer une architecture backend moderne autour de FastAPI, PostgreSQL, Alembic, Docker, Hugging Face et Railway.
+L'objectif du projet est de montrer une architecture backend moderne autour de FastAPI, PostgreSQL, Alembic, Docker, OpenAI et Railway.
 
 Ce repository est pense comme un projet personnel de portfolio. Il n'est pas presente comme une solution enterprise complete, mais comme une application backend structuree, deployable et durcie avec des pratiques proches de la production.
 
@@ -45,8 +45,8 @@ Ce qui compte ici, c'est la preuve visible que l'API fonctionne pour de vrai, qu
 - Recherche documentaire simple par utilisateur.
 - Metadata ajoutees aux chunks: nom du fichier, page et utilisateur.
 - Sources fournies au contexte RAG avec nom du fichier et page.
-- Generation de reponse via l'API Hugging Face.
-- Retry simple sur les erreurs temporaires Hugging Face.
+- Generation de reponse via l'API OpenAI.
+- Gestion propre des erreurs temporaires du service IA.
 - Observabilite et tracing RAG avec LangSmith.
 - Persistance des conversations en PostgreSQL.
 - Endpoints pour consulter les conversations et messages.
@@ -71,7 +71,7 @@ Ce qui compte ici, c'est la preuve visible que l'API fonctionne pour de vrai, qu
 - Pydantic
 - Passlib
 - python-jose
-- Hugging Face
+- OpenAI
 - LangSmith
 - Docker
 - Docker Compose
@@ -96,7 +96,7 @@ FastAPI
   |      |-- document_chunks
   |      |-- rate_limit_events
   |
-  |--> Hugging Face
+  |--> OpenAI
   |      |-- modele de generation
   |
   |--> LangSmith
@@ -145,11 +145,12 @@ Les variables attendues sont definies dans `.env.example`.
 ```env
 DATABASE_URL=postgresql+psycopg://user:password@host:5432/database
 
-HF_TOKEN=
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1-mini
 
 LANGCHAIN_API_KEY=
 LANGCHAIN_TRACING_V2=false
-LANGCHAIN_PROJECT=rag-fastapi-huggingface-api
+LANGCHAIN_PROJECT=rag-fastapi-openai-api
 
 JWT_SECRET_KEY=
 JWT_ALGO=HS256
@@ -162,7 +163,8 @@ ALLOWED_ORIGINS=
 | Variable | Description |
 | --- | --- |
 | `DATABASE_URL` | URL de connexion PostgreSQL utilisee par SQLAlchemy et Alembic. |
-| `HF_TOKEN` | Token Hugging Face utilise pour appeler l'API de generation. |
+| `OPENAI_API_KEY` | Cle API OpenAI utilisee pour generer les reponses RAG. |
+| `OPENAI_MODEL` | Modele OpenAI utilise pour la generation, par defaut `gpt-4.1-mini`. |
 | `LANGCHAIN_API_KEY` | Cle LangSmith utilisee pour tracer les executions RAG. |
 | `LANGCHAIN_TRACING_V2` | Active ou desactive le tracing LangSmith. |
 | `LANGCHAIN_PROJECT` | Nom du projet LangSmith utilise pour organiser les traces. |
@@ -309,7 +311,7 @@ Sur Railway, il faut configurer:
 
 - un service PostgreSQL;
 - la variable `DATABASE_URL`;
-- les variables Hugging Face;
+- les variables OpenAI `OPENAI_API_KEY` et `OPENAI_MODEL`;
 - les variables JWT;
 - `ALLOWED_ORIGINS` si un frontend est connecte.
 - `TRUST_PROXY_HEADERS=true`.
@@ -339,7 +341,7 @@ Quand le projet est en ligne, un testeur peut verifier:
 - une base PostgreSQL reliee a l'application;
 - un flux utilisateur complet: inscription, connexion, upload, question, reponse;
 - un RAG trace avec LangSmith;
-- un comportement propre en cas d'indisponibilite temporaire du modele Hugging Face.
+- un comportement propre en cas d'indisponibilite temporaire du service IA.
 
 ## Endpoints Principaux
 
@@ -481,7 +483,7 @@ Tests actuellement presents:
 - refus d'une route protegee sans authentification;
 - refus d'un upload non PDF;
 - appel de `/chat_ask/` avec agent RAG mocke;
-- retry Hugging Face sur erreur temporaire.
+- appel OpenAI mocke et gestion propre des erreurs de generation.
 
 ## RAG
 
@@ -493,14 +495,14 @@ Le RAG fonctionne actuellement avec:
 - recherche simple par mots dans les chunks de l'utilisateur;
 - metadata sur les chunks: `filename`, `page`, `user_id`;
 - contexte RAG formate avec les sources disponibles;
-- generation de reponse via l'API Hugging Face;
-- retries simples sur les erreurs temporaires de l'API Hugging Face;
-- tracing LangSmith sur la recherche documentaire, l'appel Hugging Face et l'execution RAG globale.
+- generation de reponse via l'API OpenAI;
+- gestion propre des erreurs temporaires de l'API OpenAI;
+- tracing LangSmith sur la recherche documentaire, l'appel OpenAI et l'execution RAG globale.
 
-Le modele actuellement configure dans le code est:
+Le modele de generation se configure avec la variable d'environnement:
 
 ```text
-Qwen/Qwen3-32B
+OPENAI_MODEL=gpt-4.1-mini
 ```
 
 ## Securite Actuelle
@@ -524,7 +526,7 @@ Le projet integre LangSmith pour tracer les parties importantes du pipeline RAG:
 
 - recuperation des chunks documentaires;
 - construction du contexte;
-- appel au modele Hugging Face;
+- appel au modele OpenAI;
 - execution globale de la reponse RAG;
 - journalisation des requetes HTTP avec leur duree et leur statut.
 
@@ -533,7 +535,7 @@ Le tracing est configurable via les variables d'environnement:
 ```env
 LANGCHAIN_API_KEY=
 LANGCHAIN_TRACING_V2=false
-LANGCHAIN_PROJECT=rag-fastapi-huggingface-api
+LANGCHAIN_PROJECT=rag-fastapi-openai-api
 ```
 
 En local ou en CI, le tracing peut rester desactive avec `LANGCHAIN_TRACING_V2=false`.
@@ -544,7 +546,7 @@ En environnement de demonstration, il suffit d'ajouter une cle LangSmith valide 
 Ces limites sont connues et sont traitees progressivement:
 
 - La recherche documentaire reste volontairement legere et lexicale.
-- L'appel Hugging Face depend toujours de la disponibilite du service externe.
+- L'appel OpenAI depend toujours de la disponibilite du service externe.
 - Le streaming du chat reste synchrone dans la requete.
 - Les migrations Railway ne sont pas automatisees.
 - Il n'y a pas encore de frontend dans ce repository.

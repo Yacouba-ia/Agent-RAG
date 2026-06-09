@@ -8,7 +8,7 @@ VERCEL_ORIGIN = "https://ai-knowledge-assistant-frontend-ashen.vercel.app"
 def test_cors_origins_parse_env_and_strip_spaces():
     settings = Settings(
         DATABASE_URL="sqlite:///./test.db",
-        HF_TOKEN="test-hf-token",
+        OPENAI_API_KEY="test-openai-key",
         JWT_SECRET_KEY="test-secret-key",
         JWT_ALGO="HS256",
         ALLOWED_ORIGINS=" http://localhost:5173 , https://example.com ",
@@ -24,7 +24,7 @@ def test_cors_origins_parse_env_and_strip_spaces():
 def test_cors_origins_include_vercel_origin_by_default():
     settings = Settings(
         DATABASE_URL="sqlite:///./test.db",
-        HF_TOKEN="test-hf-token",
+        OPENAI_API_KEY="test-openai-key",
         JWT_SECRET_KEY="test-secret-key",
         JWT_ALGO="HS256",
     )

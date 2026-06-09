@@ -10,12 +10,13 @@ class Settings(BaseSettings):
     """Configuration chargee depuis les variables d'environnement ou .env."""
 
     DATABASE_URL: str
-    HF_TOKEN: str
+    openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
+    openai_model: str = Field(default="gpt-4.1-mini", validation_alias="OPENAI_MODEL")
 
     # LangSmith utilise les variables LANGCHAIN_* pour configurer le tracing.
     LANGCHAIN_API_KEY: str = ""
     LANGCHAIN_TRACING_V2: bool = False
-    LANGCHAIN_PROJECT: str = "rag-fastapi-huggingface-api"
+    LANGCHAIN_PROJECT: str = "rag-fastapi-openai-api"
 
     jwt_secret_key: str = Field(validation_alias="JWT_SECRET_KEY")
     jwt_algo: str = Field(validation_alias="JWT_ALGO")
