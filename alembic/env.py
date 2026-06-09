@@ -10,11 +10,10 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
 import tablebase  # noqa: E402,F401
-from config import settings  # noqa: E402
-from database import Base  # noqa: E402
+from database import DATABASE_URL, Base  # noqa: E402
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
