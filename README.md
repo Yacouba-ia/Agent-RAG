@@ -40,6 +40,8 @@ Ce qui compte ici, c'est la preuve visible que l'API fonctionne pour de vrai, qu
 - Extraction des PDF avec `pypdf`.
 - Decoupage leger des PDF en chunks.
 - Stockage des chunks dans PostgreSQL.
+- Liste des PDF indexes par utilisateur.
+- Suppression des PDF indexes par utilisateur.
 - Recherche documentaire simple par utilisateur.
 - Metadata ajoutees aux chunks: nom du fichier, page et utilisateur.
 - Sources fournies au contexte RAG avec nom du fichier et page.
@@ -389,6 +391,8 @@ Authentification requise.
 
 ```http
 POST /upload/upload_document
+GET /upload/documents
+DELETE /upload/documents/{filename}
 ```
 
 Authentification requise.

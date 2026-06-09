@@ -5,6 +5,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pypdf import PdfReader
+from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 from starlette import status
 
 from database import db_dependency
@@ -22,6 +24,76 @@ logger = logging.getLogger(__name__)
 MAX_UPLOAD_COUNT = 10
 MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
 ALLOWED_PDF_CONTENT_TYPE = "application/pdf"
+
+
+@router.get("/documents", status_code=status.HTTP_200_OK)
+async def list_documents(user: user_dependency, db: db_dependency):
+    """Liste les PDF indexes de l'utilisateur courant depuis les chunks stockes."""
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Utilisateur non authentifie",
+        )
+
+    rows = (
+        db.query(
+            DocumentChunks.filename,
+            func.count(DocumentChunks.id).label("chunk_count"),
+            func.min(DocumentChunks.created_at).label("uploaded_at"),
+        )
+        .filter(DocumentChunks.user_id == user.get("id"))
+        .group_by(DocumentChunks.filename)
+        .order_by(func.min(DocumentChunks.created_at).desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": row.filename,
+            "name": row.filename,
+            "type": "pdf",
+            "size": 0,
+            "status": "ready",
+            "uploaded_at": row.uploaded_at,
+            "chunk_count": row.chunk_count,
+        }
+        for row in rows
+    ]
+
+
+@router.delete("/documents/{filename}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(filename: str, user: user_dependency, db: db_dependency):
+    """Supprime tous les chunks d'un PDF appartenant a l'utilisateur courant."""
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Utilisateur non authentifie",
+        )
+
+    try:
+        deleted = (
+            db.query(DocumentChunks)
+            .filter(DocumentChunks.user_id == user.get("id"))
+            .filter(DocumentChunks.filename == filename)
+            .delete(synchronize_session=False)
+        )
+        if deleted == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document introuvable",
+            )
+
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.exception("Failed to delete document: %s", filename)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erreur lors de la suppression du document",
+        ) from exc
 
 
 @router.post(
