@@ -304,6 +304,122 @@ def build_rag_prompt(db: Session, query: str, user_id: int) -> str | None:
     context = format_retrieved_documents(docs)[:MAX_CONTEXT_CHARS]
     return build_prompt(query=query, context=context)
 
+def clean_assistant_answer(text: str) -> str:
+    """
+    Nettoie la réponse finale de l'assistant pour un rendu SaaS professionnel.
+    Supprime le Markdown inutile, les emojis décoratifs et améliore les retours à la ligne.
+    """
+    if not text:
+        return ""
+
+    cleaned = text.strip()
+
+    # Supprimer les symboles Markdown fréquents
+    cleaned = cleaned.replace("###", "")
+    cleaned = cleaned.replace("##", "")
+    cleaned = cleaned.replace("#", "")
+    cleaned = cleaned.replace("**", "")
+    cleaned = cleaned.replace("```", "")
+    cleaned = cleaned.replace("`", "")
+
+    # Supprimer les puces Markdown en début de ligne
+    cleaned = re.sub(r"(?m)^\s*[\*\•]\s+", "", cleaned)
+
+    # Supprimer quelques emojis/icônes décoratifs fréquents
+    cleaned = re.sub(
+        r"[\U0001F300-\U0001FAFF\U00002700-\U000027BF]",
+        "",
+        cleaned,
+    )
+
+    # Mettre les grandes sections sur leurs propres lignes
+    section_titles = [
+        "Points essentiels :",
+        "Points importants :",
+        "Détails :",
+        "Comparaison :",
+        "Conclusion :",
+        "Sources :",
+    ]
+
+    for title in section_titles:
+        cleaned = re.sub(
+            rf"\s*{re.escape(title)}\s*",
+            f"\n\n{title}\n\n",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+
+    # Supprimer les titres mécaniques qu'on ne veut pas afficher
+    forbidden_titles = [
+        "Réponse courte :",
+        "Résumé court :",
+        "Réponse détaillée :",
+    ]
+
+    for title in forbidden_titles:
+        cleaned = re.sub(
+            rf"^\s*{re.escape(title)}\s*",
+            "",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+
+    # Forcer chaque numéro à commencer sur une nouvelle ligne
+    cleaned = re.sub(
+        r"\s+(\d+\.\s+)",
+        r"\n\n\1",
+        cleaned,
+    )
+
+    # Nettoyer les sources au format Markdown éventuel
+    cleaned = re.sub(
+        r"(?m)^\s*[\*\-]\s*(.+?\.pdf.*)$",
+        r"Source : \1",
+        cleaned,
+    )
+
+    # Forcer chaque "Source :" à commencer sur une nouvelle ligne
+    cleaned = re.sub(
+        r"\s*(Source\s*\d*\s*:)",
+        r"\n\1",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+
+    # Nettoyer les espaces avant les retours à la ligne
+    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+
+    # Réduire les lignes vides excessives
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
+    return cleaned.strip()
+
+
+def clean_stream_chunk(chunk: str) -> str:
+    """
+    Nettoyage léger pendant le streaming.
+    On évite les transformations lourdes ici pour ne pas casser le flux.
+    """
+    if not chunk:
+        return ""
+
+    chunk = chunk.replace("###", "")
+    chunk = chunk.replace("##", "")
+    chunk = chunk.replace("#", "")
+    chunk = chunk.replace("**", "")
+    chunk = chunk.replace("```", "")
+    chunk = chunk.replace("`", "")
+    chunk = chunk.replace("* ", "")
+
+    chunk = re.sub(
+        r"[\U0001F300-\U0001FAFF\U00002700-\U000027BF]",
+        "",
+        chunk,
+    )
+
+    return chunk
+
 
 @traceable(name="call_openai")
 def call_openai(prompt: str) -> str:

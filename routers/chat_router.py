@@ -12,6 +12,8 @@ from rag import (
     OPENAI_UNAVAILABLE_MESSAGE,
     build_rag_prompt,
     stream_openai_answer,
+    clean_stream_chunk,
+    clean_assistant_answer
 )
 from rate_limit import chat_rate_limit
 from routers.auth_router import user_dependency
@@ -123,22 +125,31 @@ async def chat_ask(
 
         try:
             if prompt is None:
-                chunks.append(NO_RELEVANT_DOCUMENT_MESSAGE)
-                yield NO_RELEVANT_DOCUMENT_MESSAGE
+                clean_message = clean_assistant_answer(NO_RELEVANT_DOCUMENT_MESSAGE)
+                chunks.append(clean_message)
+                yield clean_message
                 return
 
             for chunk in stream_openai_answer(prompt):
-                chunks.append(chunk)
-                yield chunk
+                clean_chunk = clean_stream_chunk(chunk)
+
+                if clean_chunk:
+                    chunks.append(clean_chunk)
+                    yield clean_chunk
+
         except Exception:
             logger.exception("Unexpected RAG streaming failure")
-            chunks.append(OPENAI_UNAVAILABLE_MESSAGE)
-            yield OPENAI_UNAVAILABLE_MESSAGE
+            clean_error = clean_assistant_answer(OPENAI_UNAVAILABLE_MESSAGE)
+            chunks.append(clean_error)
+            yield clean_error
+
         finally:
+            final_answer = clean_assistant_answer("".join(chunks))
+
             save_assistant_message(
                 db=db,
                 session_id=session_id,
-                answer="".join(chunks),
+                answer=final_answer,
             )
 
     return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
