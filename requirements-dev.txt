@@ -2,4 +2,4 @@
 
 pytest
 ruff
-httpx2
+httpx

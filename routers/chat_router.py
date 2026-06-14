@@ -11,9 +11,9 @@ from rag import (
     NO_RELEVANT_DOCUMENT_MESSAGE,
     OPENAI_UNAVAILABLE_MESSAGE,
     build_rag_prompt,
-    stream_openai_answer,
+    clean_assistant_answer,
     clean_stream_chunk,
-    clean_assistant_answer
+    stream_openai_answer,
 )
 from rate_limit import chat_rate_limit
 from routers.auth_router import user_dependency
